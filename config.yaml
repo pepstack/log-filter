@@ -1,0 +1,21 @@
+log-handlers:
+    Exp:
+        path_prefix: "/var/log/output"
+        file_prefix: "exp_"
+        file_suffix: ".log"
+        split_time_col: 2
+        split_minutes: 5
+
+    LevelUp:
+        path_prefix: "/var/log/output"
+        file_prefix: "levelup_"
+        file_suffix: ".log"
+        split_time_col: 2
+        split_minutes: 5
+
+    LevelUp2:
+        path_prefix: "/var/log/output"
+        file_prefix: "levelup2_"
+        file_suffix: ".log"
+        split_time_col: 2
+        split_minutes: 5

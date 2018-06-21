@@ -4,10 +4,10 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-21 15:50:08
+# @update: 2018-06-21 18:48:29
 #
 #######################################################################
-import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime
+import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
 
 import multiprocessing
 from multiprocessing import Process, Queue, Manager
@@ -389,6 +389,26 @@ def main(parser, config):
         num_handlers = multiprocessing.cpu_count() * 2
         pass
 
+    # 取得 log-handlers 配置文件的内容
+    log_handlers_config = None
+    cfgyaml = None
+    try:
+        abs_config_file = options.config_file
+        print abs_config_file
+
+        cfgyaml = open(abs_config_file)
+
+        log_handlers_config = yaml.load(cfgyaml)['log-handlers']
+
+        elog.info("using log-handlers config file: %s", abs_config_file)
+    except:
+        elog.warn("using default config in file: %s", APPFILE)
+        log_handlers_config = config['log-handlers']
+        pass
+    finally:
+        util.close_file_nothrow(cfgyaml)
+        pass
+
     # 启动服务
     elog.force("%s-%s startup", APPNAME, APPVER)
 
@@ -418,7 +438,7 @@ def main(parser, config):
     p_handlers = []
     for i in range(num_handlers):
         p = Process(target = handler_worker, args = (sweep_queue, done_queue, dictLogfile,
-                config['log-handlers'], logger_dictConfig, stopfile))
+                log_handlers_config, logger_dictConfig, stopfile))
         p.daemon = True
         p.start()
         p_handlers.append(p)
@@ -472,6 +492,11 @@ if __name__ == "__main__":
         help="指定处理过程中的字节偏移文件保存的目录. 默认为监控文件所在的目录. 此目录不允许删除.",
         metavar="PATH")
 
+    group.add_option("-C", "--handlers-config",
+        action="store", dest="config_file", type="string", default=None,
+        help="指定配置文件 (yaml 格式). 默认为不指定, 使用默认配置.",
+        metavar="CFGPATH")
+
     group.add_option("-N", "--num-workers",
         action="store", dest="num_workers", type="int", default=1,
         help="指定处理进程数目. 默认 1.",
@@ -488,6 +513,8 @@ if __name__ == "__main__":
     # 下面缺省的配置会覆盖参数化的配置中的默认为空(None)的配置
     #
     defaultConfig = {
+        'sweep-queue-size' : 256,
+        'done-queue-size' : 128,
         'watch-paths' : '/var/log/stash',
         'position-stash' : '/var/log/position-stash',
         'stopfile' : stopfile,
@@ -518,9 +545,7 @@ if __name__ == "__main__":
                 "split_time_col" : 2,
                 "split_minutes" : 5
             }
-        },
-        'sweep-queue-size' : 256,
-        'done-queue-size' : 128,
+        }
     }
 
     main(parser, defaultConfig)
