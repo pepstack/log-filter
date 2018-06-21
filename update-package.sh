@@ -17,7 +17,7 @@ _name=$(basename $_file)
 
 _proj=$(basename $_cdir)
 
-_ver=1.0.0
+_ver=1.0.2
 #######################################################################
 echo "update date and version"
 ${_cdir}/revise.py \
