@@ -39,6 +39,9 @@ READ_MAXSIZE = 8192 * 8192
 # 队列文件数
 QUEUE_SIZE = 256
 
+# 目录扫描间隔时间秒
+SWEEP_INTERVAL_SECONDS = 3
+
 #######################################################################
 # md5 字符串
 def md5string(str):
@@ -318,12 +321,13 @@ def sweep_path(sweep_queue, dictLogfile, path, curtime, stopfile, position_stash
 
 
 def sweeper_worker(watch_paths, sweep_queue, dictLogfile, stopfile, position_stash):
-    sleep_ms = 1000
-
     elog.info("starting")
 
     while not util.file_exists(stopfile):
         for path in watch_paths:
+            if util.file_exists(stopfile):
+                break
+
             elog.debug("sweep path: %s", path)
 
             try:
@@ -331,7 +335,14 @@ def sweeper_worker(watch_paths, sweep_queue, dictLogfile, stopfile, position_sta
             except:
                 elog.error("%r: %s", sys.exc_info(), path)
             finally:
-                util.select_sleep(sleep_ms)
+                if SWEEP_INTERVAL_SECONDS > 1:
+                    for i in range(SWEEP_INTERVAL_SECONDS * 10):
+                        if util.file_exists(stopfile):
+                            break
+                        time.sleep(0.1)
+                else:
+                    time.sleep(SWEEP_INTERVAL_SECONDS)
+                pass
 
     elog.warn("stopped")
     pass
