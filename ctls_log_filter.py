@@ -28,6 +28,18 @@ import utils.utility as util
 import utils.evntlog as elog
 
 #######################################################################
+# 下面的参数可以更加需要更改:
+
+# 64 KB. 每次处理数据缓冲区大小. 必须大于 1 行的字节数!
+CHUNK_SIZE = 65536
+
+# 64 MB. 每次打开文件处理的最大字节
+READ_MAXSIZE = 8192 * 8192
+
+# 队列文件数
+QUEUE_SIZE = 256
+
+#######################################################################
 # md5 字符串
 def md5string(str):
     m = hashlib.md5()
@@ -74,9 +86,8 @@ def findLoggerName(msgrow):
 
 # 实际的子进程处理日志文件的函数
 def do_worker_proc(log_handlers, done_queue, logkey, logfile, stopfile, positionfile):
-    #!-- elog.debug("position: %s", positionfile)
 
-    messages = util.relay_read_messages(logfile, positionfile, stopfile, 8192, 65536)
+    messages = util.relay_read_messages(logfile, positionfile, stopfile, CHUNK_SIZE, READ_MAXSIZE)
 
     for msgline in messages:
         msgcols = msgline.split('|')
@@ -157,6 +168,8 @@ def handler_worker(sweep_queue, done_queue, dictLogfile, loghandlersDict, logger
 
 
     while not util.file_exists(stopfile):
+        logkey = None
+
         try:
             # block=True, timeout=1s
             (logkey, logfile, positionfile) = sweep_queue.get(True, 1)
@@ -166,10 +179,6 @@ def handler_worker(sweep_queue, done_queue, dictLogfile, loghandlersDict, logger
             # 调用实际的处理函数
             do_worker_proc(log_handlers, done_queue, logkey, logfile, stopfile, positionfile)
 
-            # 处理完毕, 从全局字典中移除
-            dlogfile, dposfile = dictLogfile.pop(logkey)
-
-            elog.info("pop dict: %s => %s (%s)", logkey, dlogfile, dposfile)
         except Empty as ee:
             pass
         except KeyError as ke:
@@ -177,6 +186,12 @@ def handler_worker(sweep_queue, done_queue, dictLogfile, loghandlersDict, logger
             pass
         except Exception as ex:
             elog.error("Exception: %r", ex)
+            pass
+        finally:
+            if logkey:
+                # 处理完毕, 从全局字典中移除
+                dlogfile, dposfile = dictLogfile.pop(logkey)
+                elog.info("pop dict: %s => %s (%s)", logkey, dlogfile, dposfile)
             pass
 
     elog.warn("%s stopped", multiprocessing.current_process().name)
@@ -466,7 +481,7 @@ def main(parser, config):
 #######################################################################
 # Usage:
 #
-#   $ ./game_log_filter.py -N 20
+#   $ %prog -N 20 -C ./config.yaml --log-level=ERROR
 #
 #
 if __name__ == "__main__":
@@ -514,8 +529,8 @@ if __name__ == "__main__":
     # 下面缺省的配置会覆盖参数化的配置中的默认为空(None)的配置
     #
     defaultConfig = {
-        'sweep-queue-size' : 256,
-        'done-queue-size' : 128,
+        'sweep-queue-size' : QUEUE_SIZE,
+        'done-queue-size' : QUEUE_SIZE,
         'watch-paths' : '/var/log/stash',
         'position-stash' : '/var/log/position-stash',
         'stopfile' : stopfile,
