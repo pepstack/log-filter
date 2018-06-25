@@ -27,6 +27,9 @@ APPHELP = "log files filter and processing"
 import utils.utility as util
 import utils.evntlog as elog
 
+# process statistics
+from handlers.process_stat import ProcessStat
+
 #######################################################################
 # 下面的参数可以更加需要更改:
 
@@ -88,9 +91,11 @@ def findLoggerName(msgrow):
 
 
 # 实际的子进程处理日志文件的函数
-def do_worker_proc(log_handlers, done_queue, logkey, logfile, stopfile, positionfile):
+def doWorker(pstat, log_handlers, done_queue, logkey, logfile, stopfile, positionfile):
 
     messages = util.relay_read_messages(logfile, positionfile, stopfile, CHUNK_SIZE, READ_MAXSIZE)
+
+    send_lines = 0
 
     for msgline in messages:
         msgcols = msgline.split('|')
@@ -134,8 +139,12 @@ def do_worker_proc(log_handlers, done_queue, logkey, logfile, stopfile, position
             # 输出行日志到日志输出文件
             logger.log(rowline)
 
+            send_lines += 1
+
             # 打印日志内容
             elog.debug(rowline)
+
+            pass
         except IndexError as ie:
             elog.error("IndexError error: %s", msgline)
             pass
@@ -145,6 +154,9 @@ def do_worker_proc(log_handlers, done_queue, logkey, logfile, stopfile, position
         except Exception as ex:
             elog.error("Exception: %s", msgline)
             pass
+
+    pstat.statistic(pname, "send-lines", send_lines)
+    pstat.statistic(pname, "error-lines", len(messages) - send_lines)
     pass
 
 
@@ -153,10 +165,12 @@ def do_worker_proc(log_handlers, done_queue, logkey, logfile, stopfile, position
 #   循环从任务队列 sweep_queue 取一个待处理的任务进行处理, 并将结果放入 done_queue,
 #   直到遇到'STOP'
 #
-def handler_worker(sweep_queue, done_queue, dictLogfile, loghandlersDict, logger_dictConfig, stopfile):
+def handler_worker(pstat, sweep_queue, done_queue, dictLogfile, loghandlersDict, logger_dictConfig, stopfile):
     from handlers.pipe_logger import PipeLogger
 
-    elog.info("%s start running ...", multiprocessing.current_process().name)
+    pname = multiprocessing.current_process().name
+
+    pstat.start(pname)
 
     log_handlers = {
     }
@@ -180,7 +194,7 @@ def handler_worker(sweep_queue, done_queue, dictLogfile, loghandlersDict, logger
             elog.debug("sweep_queue get: %s => %s (%s)", logkey, logfile, positionfile)
 
             # 调用实际的处理函数
-            do_worker_proc(log_handlers, done_queue, logkey, logfile, stopfile, positionfile)
+            doWorker(pstat, log_handlers, done_queue, logkey, logfile, stopfile, positionfile)
 
         except Empty as ee:
             pass
@@ -197,7 +211,9 @@ def handler_worker(sweep_queue, done_queue, dictLogfile, loghandlersDict, logger
                 elog.info("pop dict: %s => %s (%s)", logkey, dlogfile, dposfile)
             pass
 
-    elog.warn("%s stopped", multiprocessing.current_process().name)
+    pstat.stop(pname)
+
+    elog.warn("%s stopped. elapsed %d seconds", pname, pstat.elapsedSeconds(pname))
 
 
 #######################################################################
@@ -210,12 +226,11 @@ def doFilter(logkey, logfile, filename, curtime, position_stash):
         # 首先是文件路径名的匹配
         title, ext = os.path.splitext(filename)
 
-        if ext in ["", ".lock", ".position", ".entrydb"]:
+        if ext in ["", ".md5", ".lock", ".position", ".entrydb"]:
             return (False, positionfile)
 
         # 比较文件的时间
         # TODO:
-
 
         # positionfile: 字节偏移文件的全路径名
         if position_stash is None:
@@ -266,8 +281,11 @@ def filter_logfile(logfile, filename, curtime, dictLogfile, position_stash):
         (passed, positionfile) = doFilter(logkey, logfile, filename, curtime, position_stash)
 
         if passed:
-            # 需要处理的日志
+            # 需要处理的日志.
+            #  setdefault 如果键不存在于字典中，将会添加键并将值设为默认值。
+            #  如果键存在于字典中，不设置
             dictLogfile.setdefault(logkey, (logfile, positionfile))
+
             return (True, logkey, positionfile)
         else:
             # 不需要处理的日志
@@ -280,7 +298,7 @@ def filter_logfile(logfile, filename, curtime, dictLogfile, position_stash):
     return (False, None, None)
 
 
-def sweep_path(sweep_queue, dictLogfile, path, curtime, stopfile, position_stash):
+def sweep_path(pstat, pname, sweep_queue, dictLogfile, path, curtime, stopfile, position_stash):
     files = os.listdir(path)
     files.sort(key=lambda x:x[0:20])
 
@@ -292,15 +310,15 @@ def sweep_path(sweep_queue, dictLogfile, path, curtime, stopfile, position_stash
         pf = os.path.join(path, f)
 
         if util.dir_exists(pf):
-            sweep_path(sweep_queue, dictLogfile, pf, curtime, stopfile, position_stash)
+            sweep_path(pstat, pname, sweep_queue, dictLogfile, pf, curtime, stopfile, position_stash)
         elif util.file_exists(pf):
             passed, logkey, positionfile = filter_logfile(pf, f, curtime, dictLogfile, position_stash)
 
             if passed:
-                fd = None
                 try:
                     sweep_queue.put_nowait((logkey, pf, positionfile))
                     elog.info("sweep_queue put: %s => %s (%s)", logkey, pf, positionfile)
+                    pstat.statistic(pname, "passed-files", 1)
                 except Full:
                     elog.warn("sweep_queue if full. wait for %d seconds", SWEEP_INTERVAL_SECONDS)
 
@@ -313,12 +331,15 @@ def sweep_path(sweep_queue, dictLogfile, path, curtime, stopfile, position_stash
                     break
             else:
                 elog.debug("ignored file: %s", pf)
+                pstat.statistic(pname, "ignored-files", 1)
                 pass
     pass
 
 
-def sweeper_worker(watch_paths, sweep_queue, dictLogfile, stopfile, position_stash):
-    elog.info("starting")
+def sweeper_worker(pstat, watch_paths, sweep_queue, dictLogfile, stopfile, position_stash):
+    pname = multiprocessing.current_process().name
+
+    pstat.start(pname)
 
     while not util.file_exists(stopfile):
         for path in watch_paths:
@@ -328,7 +349,7 @@ def sweeper_worker(watch_paths, sweep_queue, dictLogfile, stopfile, position_sta
             elog.debug("sweep path: %s", path)
 
             try:
-                sweep_path(sweep_queue, dictLogfile, path, time.time(), stopfile, position_stash)
+                sweep_path(pstat, pname, sweep_queue, dictLogfile, path, time.time(), stopfile, position_stash)
             except:
                 elog.error("%r: %s", sys.exc_info(), path)
             finally:
@@ -338,7 +359,10 @@ def sweeper_worker(watch_paths, sweep_queue, dictLogfile, stopfile, position_sta
                     time.sleep(1)
                 pass
 
-    elog.warn("stopped")
+    pstat.stop(pname)
+
+    elog.warn("%s stopped. elapsed %d seconds", pname, pstat.elapsedSeconds(pname))
+
     pass
 
 
@@ -456,17 +480,25 @@ def main(parser, config):
     elog.info("create done queue")
     done_queue = Queue(config['done-queue-size'])
 
-    # 创建单个 sweep 进程: 创建任务放入任务队列
-    sweep_proc = Process(target = sweeper_worker, args = (watch_paths, sweep_queue, dictLogfile, stopfile, position_stash_path))
+    # 每分钟(60秒)打印一次统计报告
+    pstat = ProcessStat(reportInterval = 60)
 
+    # 创建单个 sweep 进程: 创建任务放入任务队列
+    sweep_proc = Process(target = sweeper_worker, args = (pstat, watch_paths, sweep_queue, dictLogfile, stopfile, position_stash_path))
+
+    sweepProcNameList = [ sweep_proc.name ]
+    
     # 创建多个 handler 进程: 从任务取出任务队列并执行
     p_handlers = []
+    workerProcNameList = []
     for i in range(num_handlers):
-        p = Process(target = handler_worker, args = (sweep_queue, done_queue, dictLogfile,
+        p = Process(target = handler_worker, args = (pstat, sweep_queue, done_queue, dictLogfile,
                 log_handlers_config, logger_dictConfig, stopfile))
         p.daemon = True
         p.start()
         p_handlers.append(p)
+
+        workerProcNameList.append(p.name)
 
         # wait for 0.1 seconds
         time.sleep(0.1)
@@ -476,14 +508,32 @@ def main(parser, config):
     sweep_proc.daemon = True
     sweep_proc.start()
 
-    # block wait forever !
+    # 永远运行并间歇打印统计报告
+    cnt = 0
+    while not util.file_exists(stopfile):
+        cnt += 1
+
+        time.sleep(1)
+
+        if cnt == pstat.reportInterval:
+            cnt = 0
+            pstat.printReport(sweepProcNameList, "SWEEP")
+            pstat.printReport(workerProcNameList, "FILTER")
+        pass
+
+    # block wait child process exit
     sweep_proc.join()
 
-    # block wait forever !
+    # block wait child processes exit
     for p in p_handlers:
         p.join()
 
+    # 全部服务中止
     elog.fatal("%s-%s shutdown.", APPNAME, APPVER)
+
+    pstat.printReport(sweepProcNameList, "SWEEP")
+    pstat.printReport(workerProcNameList, "FILTER")
+
     pass
 
 
