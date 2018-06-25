@@ -4,7 +4,7 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-25 11:00:19
+# @update: 2018-06-25 11:39:04
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
@@ -380,33 +380,37 @@ def main(parser, config):
         os.mknod(stopfile)
         sys.exit(0)
 
-    # 取得监控路径
+    # 监控文件的路径
+    #
     watch_paths = options.watch_paths
     if watch_paths is None and config.has_key('watch-paths'):
         watch_paths = config['watch-paths']
     watch_paths = parse_watch_paths(watch_paths)
 
-    # 取得位置文件保存路径. 如果为 None, 则与日志文件目录相同
+    # 位置文件保存路径
+    #   如果为 None, 则与日志文件目录相同
     position_stash_path = options.position_stash
     if position_stash_path is None and config.has_key('position-stash'):
         position_stash_path = config['position-stash']
 
-    # 绝对路径必须存在
+    # 路径如果指定则必须存在
     if not position_stash_path is None:
         position_stash_path = os.path.realpath(position_stash_path)
         if not util.dir_exists(position_stash_path):
             elog.error("position stash path not existed: %s", position_stash_path)
             sys.exit(-1)
 
+    # 进程数
+    #   = [1, cpus]
     num_handlers = options.num_workers
     if num_handlers < 1:
         elog.warn("number of workers(=%d) is too less. force it with 1", num_handlers)
         num_handlers = 1
         pass
 
-    if num_handlers > multiprocessing.cpu_count() * 2:
-        elog.warn("number of workers(=%s) is too many. force it with %d", num_handlers, multiprocessing.cpu_count() * 2)
-        num_handlers = multiprocessing.cpu_count() * 2
+    if num_handlers > multiprocessing.cpu_count():
+        elog.warn("number of workers(=%s) is too many. force it with %d", num_handlers, multiprocessing.cpu_count())
+        num_handlers = multiprocessing.cpu_count()
         pass
 
     # 取得 log-handlers 配置文件的内容
