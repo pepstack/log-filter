@@ -39,8 +39,8 @@ READ_MAXSIZE = 8192 * 8192
 # 队列文件数
 QUEUE_SIZE = 256
 
-# 目录扫描间隔时间秒
-SWEEP_INTERVAL_SECONDS = 3
+# 目录扫描间隔时间秒: >= 3
+SWEEP_INTERVAL_SECONDS = 10
 
 #######################################################################
 # md5 字符串
@@ -203,7 +203,7 @@ def handler_worker(sweep_queue, done_queue, dictLogfile, loghandlersDict, logger
 #######################################################################
 # 实际执行的过滤日志文件的处理函数, 返回 (passed, positionfile)
 #
-def do_filter_logfile(logkey, logfile, curtime, position_stash):
+def doFilter(logkey, logfile, curtime, position_stash):
     positionfile = None
 
     try:
@@ -263,7 +263,7 @@ def filter_logfile(logfile, curtime, dictLogfile, position_stash):
             return (False, logkey, None)
 
         # 实际执行的过滤函数
-        (passed, positionfile) = do_filter_logfile(logkey, logfile, curtime, position_stash)
+        (passed, positionfile) = doFilter(logkey, logfile, curtime, position_stash)
 
         if passed:
             # 需要处理的日志
@@ -299,23 +299,20 @@ def sweep_path(sweep_queue, dictLogfile, path, curtime, stopfile, position_stash
             if passed:
                 fd = None
                 try:
-                    #!--fd = open(pf, "rb")
                     sweep_queue.put_nowait((logkey, pf, positionfile))
-
-                    elog.force("sweep_queue put: %s => %s (%s)", logkey, pf, positionfile)
-
-                    time.sleep(1)
+                    elog.info("sweep_queue put: %s => %s (%s)", logkey, pf, positionfile)
                 except Full:
-                    elog.warn("sweep_queue if full")
-                    time.sleep(3)
+                    elog.warn("sweep_queue if full. wait for %d seconds", SWEEP_INTERVAL_SECONDS)
+
+                    for i in range(SWEEP_INTERVAL_SECONDS):
+                        if util.file_exists(stopfile):
+                            break
+                        time.sleep(1)
                 except:
                     elog.error("%r: %s", sys.exc_info(), pf)
                     break
-                finally:
-                    #!--util.close_file_nothrow(fd)
-                    pass
             else:
-                # elog.warn("ignored file: %s", pf)
+                elog.debug("ignored file: %s", pf)
                 pass
     pass
 
@@ -335,13 +332,10 @@ def sweeper_worker(watch_paths, sweep_queue, dictLogfile, stopfile, position_sta
             except:
                 elog.error("%r: %s", sys.exc_info(), path)
             finally:
-                if SWEEP_INTERVAL_SECONDS > 1:
-                    for i in range(SWEEP_INTERVAL_SECONDS * 10):
-                        if util.file_exists(stopfile):
-                            break
-                        time.sleep(0.1)
-                else:
-                    time.sleep(SWEEP_INTERVAL_SECONDS)
+                for i in range(SWEEP_INTERVAL_SECONDS):
+                    if util.file_exists(stopfile):
+                        break
+                    time.sleep(1)
                 pass
 
     elog.warn("stopped")
