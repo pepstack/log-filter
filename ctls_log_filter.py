@@ -4,7 +4,7 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-25 11:39:04
+# @update: 2018-06-25 19:15:25
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
@@ -487,7 +487,7 @@ def main(parser, config):
     sweep_proc = Process(target = sweeper_worker, args = (pstat, watch_paths, sweep_queue, dictLogfile, stopfile, position_stash_path))
 
     sweepProcNameList = [ sweep_proc.name ]
-    
+
     # 创建多个 handler 进程: 从任务取出任务队列并执行
     p_handlers = []
     workerProcNameList = []
