@@ -4,7 +4,7 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-21 19:14:55
+# @update: 2018-06-25 11:00:19
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
@@ -203,12 +203,12 @@ def handler_worker(sweep_queue, done_queue, dictLogfile, loghandlersDict, logger
 #######################################################################
 # 实际执行的过滤日志文件的处理函数, 返回 (passed, positionfile)
 #
-def doFilter(logkey, logfile, curtime, position_stash):
+def doFilter(logkey, logfile, filename, curtime, position_stash):
     positionfile = None
 
     try:
         # 首先是文件路径名的匹配
-        title, ext = os.path.splitext(logfile)
+        title, ext = os.path.splitext(filename)
 
         if ext in ["", ".lock", ".position", ".entrydb"]:
             return (False, positionfile)
@@ -254,7 +254,7 @@ def doFilter(logkey, logfile, curtime, position_stash):
 #######################################################################
 # 过滤日志文件, 符合处理要求返回 (True, logkey, positionfile)
 #
-def filter_logfile(logfile, curtime, dictLogfile, position_stash):
+def filter_logfile(logfile, filename, curtime, dictLogfile, position_stash):
     try:
         logkey = md5string(logfile)
 
@@ -263,7 +263,7 @@ def filter_logfile(logfile, curtime, dictLogfile, position_stash):
             return (False, logkey, None)
 
         # 实际执行的过滤函数
-        (passed, positionfile) = doFilter(logkey, logfile, curtime, position_stash)
+        (passed, positionfile) = doFilter(logkey, logfile, filename, curtime, position_stash)
 
         if passed:
             # 需要处理的日志
@@ -294,7 +294,7 @@ def sweep_path(sweep_queue, dictLogfile, path, curtime, stopfile, position_stash
         if util.dir_exists(pf):
             sweep_path(sweep_queue, dictLogfile, pf, curtime, stopfile, position_stash)
         elif util.file_exists(pf):
-            passed, logkey, positionfile = filter_logfile(pf, curtime, dictLogfile, position_stash)
+            passed, logkey, positionfile = filter_logfile(pf, f, curtime, dictLogfile, position_stash)
 
             if passed:
                 fd = None

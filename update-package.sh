@@ -17,7 +17,7 @@ _name=$(basename $_file)
 
 _proj=$(basename $_cdir)
 
-_ver=1.0.2
+_ver=1.0.4
 #######################################################################
 echo "update date and version"
 ${_cdir}/revise.py \
@@ -36,7 +36,7 @@ workdir=$(pwd)
 outdir=$(dirname $_cdir)
 cd $outdir
 rm -rf "$_proj-$_ver.tar.gz"
-tar -zvcf "$_proj-$_ver.tar.gz" --exclude="$_proj/applog" "$_proj/"
+tar -zvcf "$_proj-$_ver.tar.gz" --exclude="$_proj/.git" "$_proj/"
 cd $workdir
 
 if [ -f "$outdir/$_proj-$_ver.tar.gz" ]; then
