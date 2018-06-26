@@ -6,7 +6,7 @@
 #
 # @create: 2015-12-02
 #
-# @update: 2018-06-26 10:32:21
+# @update: 2018-06-26 11:43:36
 #
 #######################################################################
 import os, errno, sys, shutil, inspect, select, commands
@@ -330,8 +330,8 @@ def write_first_line_nothrow(fname, line):
         return ret
 
 
-def relay_read_messages(pathfile, posfile, stopfile, chunk_size = 8192, read_maxsize = 65536):
-    last_position = 0
+def relay_read_messages(pathfile, posfile, stopfile, chunk_size = 65536, read_maxsize = 16777216):
+    infd, messages, last_position = None, [], 0
 
     if not file_exists(posfile):
         os.mknod(posfile)
@@ -339,8 +339,6 @@ def relay_read_messages(pathfile, posfile, stopfile, chunk_size = 8192, read_max
 
     if file_exists(posfile):
         last_position = int(read_first_line_nothrow(posfile))
-
-    infd, messages = None, []
 
     try:
         infd = open(pathfile, 'rb')
@@ -379,11 +377,11 @@ def relay_read_messages(pathfile, posfile, stopfile, chunk_size = 8192, read_max
 
             if file_exists(stopfile):
                 break
-
-        return messages
     finally:
-        if infd:
-            infd.close()
+        close_file_nothrow(infd)
+        pass
+
+    return (messages, last_position)
 
 
 def write_file(fd, encoding, format, *arg):

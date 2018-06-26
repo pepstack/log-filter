@@ -4,7 +4,7 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-26 10:29:40
+# @update: 2018-06-26 11:45:32
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
@@ -20,7 +20,7 @@ import optparse, ConfigParser
 APPFILE = os.path.realpath(sys.argv[0])
 APPHOME = os.path.dirname(APPFILE)
 APPNAME,_ = os.path.splitext(os.path.basename(APPFILE))
-APPVER = "1.0.2"
+APPVER = "2.0.0"
 APPHELP = "log files filter and processing"
 
 # import your local modules
@@ -51,8 +51,8 @@ start_filter_dict = {
 # 64 KB. 每次处理数据缓冲区大小. 必须大于 1 行的字节数!
 CHUNK_SIZE = 65536
 
-# 8 MB. 每次打开文件处理的最大字节
-READ_MAXSIZE = 1024 * 8192
+# 16 MB. 每次打开文件处理的最大字节
+READ_MAXSIZE = 16777216
 
 # 队列文件数
 QUEUE_SIZE = 512
@@ -108,7 +108,7 @@ def findLoggerName(msgrow):
 # 实际的子进程处理日志文件的函数
 def doWorker(pstat, log_handlers, done_queue, logkey, logfile, stopfile, positionfile):
 
-    messages = util.relay_read_messages(logfile, positionfile, stopfile, CHUNK_SIZE, READ_MAXSIZE)
+    (messages, lastposition) = util.relay_read_messages(logfile, positionfile, stopfile, CHUNK_SIZE, READ_MAXSIZE)
 
     send_lines = 0
 
@@ -157,7 +157,7 @@ def doWorker(pstat, log_handlers, done_queue, logkey, logfile, stopfile, positio
             send_lines += 1
 
             # 打印日志内容
-            elog.debug(rowline)
+            elog.debug_clean(rowline)
 
             pass
         except IndexError as ie:
