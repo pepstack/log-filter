@@ -4,7 +4,7 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-26 14:51:12
+# @update: 2018-06-26 16:37:30
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
@@ -20,7 +20,7 @@ import optparse, ConfigParser
 APPFILE = os.path.realpath(sys.argv[0])
 APPHOME = os.path.dirname(APPFILE)
 APPNAME,_ = os.path.splitext(os.path.basename(APPFILE))
-APPVER = "2.0.0"
+APPVER = "2.0.2"
 APPHELP = "log files filter and processing"
 
 # import your local modules
@@ -165,13 +165,27 @@ def handler_worker(pstat, sweep_queue, done_queue, dictLogfile, loghandlersDict,
     }
 
     for loghandlerName, loghandlerConfig in loghandlersDict.items():
-        elog.info("create pipe logger: %s", loghandlerName)
-        log_handlers[loghandlerName] = PipeLogger(logger_name=loghandlerName,
-            loghandler_config=loghandlerConfig,
-            logger_config=logger_dictConfig,
-            logfile=None)
+        try:
+            elog.info("create pipe logger: %s", loghandlerName)
+
+            log_handlers[loghandlerName] = PipeLogger(logger_name=loghandlerName,
+                loghandler_config=loghandlerConfig,
+                logger_config=logger_dictConfig,
+                logfile=None)
+
+        except Exception as ex:
+            elog.fatal("failed to create pipe logger: %s. %r", loghandlerName, ex)
+            os.mknod(stopfile)
+            pstat.stop(pname)
+            elog.error("%s stopped for config error.", pname)
+            return
         pass
 
+    if len(log_handlers) == 0:
+        os.mknod(stopfile)
+        pstat.stop(pname)
+        elog.error("%s exit for log-handlers not found.", pname)
+        return
 
     while not util.file_exists(stopfile):
         logkey = None
@@ -368,6 +382,10 @@ def main(parser, config):
     (options, args) = parser.parse_args(args=None, values=None)
 
     logger_dictConfig = logger.set_logger(config['logger'], options.log_path, options.log_level)
+    if not logger_dictConfig:
+        elog.error("logger.config error: %s", config['logger']['logging_config'])
+        print "**** logger.config error:", config['logger']['logging_config']
+        sys.exit(-1)
 
     stopfile = config['stopfile']
     if options.forcestop:
@@ -413,11 +431,8 @@ def main(parser, config):
     fd = None
     try:
         abs_config_file = os.path.realpath(options.config_file)
-
         fd = open(abs_config_file)
-
         log_handlers_config = yaml.load(fd)['log-handlers']
-
         elog.info("using log-handlers config file: %s", abs_config_file)
     except:
         elog.warn("using default config in file: %s", APPFILE)
@@ -427,7 +442,26 @@ def main(parser, config):
         util.close_file_nothrow(fd)
         pass
 
-    elog.debug("log-handlers: %r", log_handlers_config)
+    if options.check_config:
+        try:
+            # 对于每个 log-handlers 是否存在 logger
+            loggersDict = logger_dictConfig['loggers']
+            handlersDict = logger_dictConfig['handlers']
+
+            for hdlName, _ in log_handlers_config.items():
+                if len(loggersDict[hdlName]['handlers']) == 0:
+                    elog.error("loggers: %s has no handlers: [] (file: %s)", hdlName,
+                        config['logger']['logging_config'])
+                    break
+
+                for hdler in loggersDict[hdlName]['handlers']:
+                    hdlCfg = handlersDict[hdler]
+
+                    elog.force_clean("    '%s': %r", hdler, hdlCfg)
+        except KeyError as ke:
+            elog.error("check config failed: %r", ke)
+            pass
+        sys.exit(0)
 
     # 启动服务
     elog.force("%s-%s startup", APPNAME, APPVER)
@@ -547,6 +581,10 @@ if __name__ == "__main__":
         action="store", dest="num_workers", type="int", default=1,
         help="指定处理进程数目. 默认 1.",
         metavar="NUM")
+
+    group.add_option("--check-config",
+        action="store_true", dest="check_config", default=False,
+        help="不启动程序, 仅仅检查配置文件是否正确")
 
     group.add_option("--forcestop",
         action="store_true", dest="forcestop", default=False,

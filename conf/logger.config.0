@@ -1,0 +1,77 @@
+version: 1
+
+
+formatters:
+  simple:
+    format: '%(message)s'
+
+
+handlers:
+  clogfile:
+    backupCount: 10
+    class: utils.cloghandler.ConcurrentRotatingFileHandler
+    delay: true
+    filename: /dev/null
+    formatter: simple
+    level: NOTSET
+    maxBytes: 2147483648
+
+  console:
+    class: logging.StreamHandler
+    formatter: simple
+    level: NOTSET
+    stream: ext://sys.stdout
+
+  Exp_handler:
+    class: utils.cloghandler.ConcurrentRotatingFileHandler
+    level: NOTSET
+    maxBytes: 9223372036854775808
+    backupCount: 2147483648
+    delay: true
+    filename: /dev/null
+    formatter: simple
+
+  LevelUp_handler:
+    class: utils.cloghandler.ConcurrentRotatingFileHandler
+    level: NOTSET
+    maxBytes: 9223372036854775808
+    backupCount: 2147483648
+    delay: true
+    filename: /dev/null
+    formatter: simple
+
+  LevelUp2_handler:
+    class: utils.cloghandler.ConcurrentRotatingFileHandler
+    level: NOTSET
+    maxBytes: 9223372036854775808
+    backupCount: 2147483648
+    delay: true
+    filename: /dev/null
+    formatter: simple
+
+
+loggers:
+  main:
+    handlers: [clogfile]
+    level: NOTSET
+    propagate: true
+
+  Exp:
+    handlers: [Exp_handler]
+    level: NOTSET
+    propagate: false
+
+  LevelUp:
+    handlers: [LevelUp_handler]
+    level: NOTSET
+    propagate: false
+
+  LevelUp2:
+    handlers: [LevelUp2_handler]
+    level: NOTSET
+    propagate: false
+
+root:
+  handlers: [console]
+  level: NOTSET
+
