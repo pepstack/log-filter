@@ -4,7 +4,7 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-26 11:45:32
+# @update: 2018-06-26 14:51:12
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
@@ -66,32 +66,6 @@ def md5string(str):
     m = hashlib.md5()
     m.update(str)
     return m.hexdigest()
-
-
-# 解析目录数组
-def parse_watch_paths(paths):
-    if not paths:
-        elog.error("watch paths not given. using: --watch-paths=PATHS")
-        sys.exit(-1)
-
-    watch_paths = []
-
-    for pl in paths.split(':'):
-        s1, s2 = pl.find("{"), pl.find("}")
-        if s1 > 1 and s2 > s1 + 1:
-            path = pl[0 : s1].strip()
-
-            for sub in pl[s1 + 1 : s2].split(','):
-                wp = os.path.join(path, sub.strip().rstrip('/'))
-                watch_paths.append(wp)
-        elif s1 < 0 and s2 < 0:
-            watch_paths.append(pl.strip().rstrip('/'))
-
-    if not len(watch_paths):
-        elog.error("watch paths not found. using: --watch-paths=PATHS")
-        sys.exit(-1)
-
-    return watch_paths
 
 
 #######################################################################
@@ -393,29 +367,7 @@ def main(parser, config):
 
     (options, args) = parser.parse_args(args=None, values=None)
 
-    # set app logger:
-    logpath = os.path.realpath(options.log_path)
-    if not util.dir_exists(logpath):
-        elog.error("log path not found: %s", logpath)
-        sys.exit(1)
-
-    logging_config = config['applog']['logging_config']
-
-    if not util.file_exists(logging_config):
-        elog.error("logging config file not found: %s", logging_config)
-        sys.exit(1)
-
-    # init logger: main
-    try:
-        applog_file = os.path.join(logpath, config['applog']['file'])
-
-        logger_dictConfig = elog.init_logger(logger_name = config['applog']['name'],
-            logging_config = logging_config,
-            logger_file = applog_file,
-            logger_level= options.log_level)
-    except Exception as ex:
-        elog.error("error init logger: %r", ex)
-        sys.exit(1)
+    logger_dictConfig = logger.set_logger(config['logger'], options.log_path, options.log_level)
 
     stopfile = config['stopfile']
     if options.forcestop:
@@ -428,7 +380,7 @@ def main(parser, config):
     watch_paths = options.watch_paths
     if watch_paths is None and config.has_key('watch-paths'):
         watch_paths = config['watch-paths']
-    watch_paths = parse_watch_paths(watch_paths)
+    watch_paths = util.parse_pathstr(watch_paths)
 
     # 位置文件保存路径
     #   如果为 None, 则与日志文件目录相同
@@ -559,29 +511,29 @@ def main(parser, config):
 #######################################################################
 # Usage:
 #
-#   $ %prog -N 20 -C ./config.yaml --log-level=ERROR
+#   $ %prog -N 20 -C ./config.yaml -L ERROR
 #
 #
 if __name__ == "__main__":
     parser, group, optparse = util.use_parser_group(APPNAME, APPVER, APPHELP,
         '%prog [Options]')
 
-    group.add_option("--log-path",
+    group.add_option("-O", "--log-path",
         action="store", dest="log_path", type="string", default="/var/log/applog",
         help="指定程序日志路径 (不是要监控的日志)",
         metavar="LOGPATH")
 
-    group.add_option("--log-level",
+    group.add_option("-L", "--log-level",
         action="store", dest="log_level", type="string", default="DEBUG",
         help="指定程序日志水平: DEBUG, WARN, INFO, ERROR. default: DEBUG",
         metavar="LOGLEVEL")
 
-    group.add_option("--watch-paths",
+    group.add_option("-W", "--watch-paths",
         action="store", dest="watch_paths", type="string", default=None,
         help="指定监控的文件目录. 默认为空. 此参数必须指定!",
         metavar="PATHS")
 
-    group.add_option("--position-stash",
+    group.add_option("-P", "--position-stash",
         action="store", dest="position_stash", type="string", default=None,
         help="指定处理过程中的字节偏移文件保存的目录. 默认为监控文件所在的目录. 此目录不允许删除.",
         metavar="PATH")
@@ -601,7 +553,7 @@ if __name__ == "__main__":
         help="安全地中止本程序的所有进程服务")
 
     # 如果 STOP 文件存在, 则终止服务. 程序启动时自动删除这个文件
-    stopfile = os.path.join(APPHOME, "FORCESTOP")
+    stopfile = os.path.join(APPHOME, APPNAME + ".FORCESTOP")
     util.remove_file_nothrow(stopfile)
 
     # 下面缺省的配置会覆盖参数化的配置中的默认为空(None)的配置
@@ -609,10 +561,10 @@ if __name__ == "__main__":
     defaultConfig = {
         'sweep-queue-size' : QUEUE_SIZE,
         'done-queue-size' : QUEUE_SIZE,
-        'watch-paths' : '/var/log/stash',
+        'watch-paths' : './stashcsv',
         'position-stash' : '/var/log/position-stash',
         'stopfile' : stopfile,
-        'applog' : {
+        'logger' : {
             'logging_config': os.path.join(APPHOME, 'conf/logger.config'),
             'file': APPNAME + '.log',
             'name': 'main'
