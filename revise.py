@@ -9,7 +9,7 @@
 #
 # @version: 1.0.0
 # @create: 2018-05-18 14:00:00
-# @update: 2018-06-12
+# @update: 2018-06-22
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, time, datetime
@@ -29,6 +29,12 @@ import utils.utility as util
 import utils.evntlog as elog
 #######################################################################
 global_counter = 0
+
+
+ignored_dirs_list = [ ".git" ]
+
+ignored_files_list = [ ".gitignore" ]
+
 
 source_filters_dict = {
     'java': ['.java', '.properties', '.xml', '.jsp', '.cresql'],
@@ -108,23 +114,25 @@ def sweep_path(path, file_exts, recursive, author, curtime):
 
             if stat.S_ISDIR(mod):
                 # is dir
-                if util.dir_exists(pf):
-                    if recursive:
-                        sweep_path(pf, file_exts, recursive, author, curtime)
-                        pass
+                if f not in ignored_dirs_list:
+                    if util.dir_exists(pf):
+                        if recursive:
+                            sweep_path(pf, file_exts, recursive, author, curtime)
+                            pass
                 pass
             elif stat.S_ISREG(mod):
                 # is file
-                ignored = False
+                if f not in ignored_files_list:
+                    ignored = False
 
-                if not util.file_exists(pf) or pf == APPFILE or f == "__init__.py":
-                    ignored = True
+                    if not util.file_exists(pf) or pf == APPFILE or f == "__init__.py":
+                        ignored = True
 
-                if not ignored:
-                    _, ext = os.path.splitext(f)
-                    if ext in file_exts:
-                        update_file(pf, f, fs, author, curtime)
-                        pass
+                    if not ignored:
+                        _, ext = os.path.splitext(f)
+                        if ext in file_exts:
+                            update_file(pf, f, fs, author, curtime)
+                            pass
         except OSError as e:
             elog.warn("%r: %s" % (e, pf))
         
@@ -194,6 +202,11 @@ if __name__ == "__main__":
         action="store", dest="filter", type="string", default=".md,java,c,cpp,python,php,shell,bash,sh",
         help="update file filter.",
         metavar="FILTER")
+
+    group.add_option("-U", "--updver",
+        action="store", dest="updver", type="string", default=None,
+        help="update file version.",
+        metavar="VERSION")
 
     group.add_option("-R", "--recursive",
         action="store_true", dest="recursive", default=False,

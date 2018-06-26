@@ -4,7 +4,7 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-25 19:15:25
+# @update: 2018-06-26 10:29:40
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
@@ -33,14 +33,29 @@ from handlers.process_stat import ProcessStat
 #######################################################################
 # 下面的参数可以更加需要更改:
 
+ext_filter_dict = {
+    "" : False,
+    ".md5" : False,
+    ".lock" : False,
+    ".position" : False,
+    ".entrydb" : False
+}
+
+
+start_filter_dict = {
+    ":enabled" : False,
+    "pt_login." : True
+}
+
+
 # 64 KB. 每次处理数据缓冲区大小. 必须大于 1 行的字节数!
 CHUNK_SIZE = 65536
 
-# 64 MB. 每次打开文件处理的最大字节
-READ_MAXSIZE = 8192 * 8192
+# 8 MB. 每次打开文件处理的最大字节
+READ_MAXSIZE = 1024 * 8192
 
 # 队列文件数
-QUEUE_SIZE = 256
+QUEUE_SIZE = 512
 
 # 目录扫描间隔时间秒: >= 3
 SWEEP_INTERVAL_SECONDS = 10
@@ -226,8 +241,12 @@ def doFilter(logkey, logfile, filename, curtime, position_stash):
         # 首先是文件路径名的匹配
         title, ext = os.path.splitext(filename)
 
-        if ext in ["", ".md5", ".lock", ".position", ".entrydb"]:
+        if not ext_filter_dict.get(ext, True):
             return (False, positionfile)
+
+        if start_filter_dict.get(":enabled", False):
+            # TODO:
+            pass
 
         # 比较文件的时间
         # TODO:
