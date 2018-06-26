@@ -4,7 +4,7 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-26 16:37:30
+# @update: 2018-06-26 16:46:06
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
@@ -80,7 +80,7 @@ def findLoggerName(msgrow):
 
 
 # 实际的子进程处理日志文件的函数
-def doWorker(pstat, log_handlers, done_queue, logkey, logfile, stopfile, positionfile):
+def doWorker(pstat, pname, log_handlers, done_queue, logkey, logfile, stopfile, positionfile):
 
     (messages, lastposition) = util.relay_read_messages(logfile, positionfile, stopfile, CHUNK_SIZE, READ_MAXSIZE)
 
@@ -197,7 +197,7 @@ def handler_worker(pstat, sweep_queue, done_queue, dictLogfile, loghandlersDict,
             elog.debug("sweep_queue get: %s => %s (%s)", logkey, logfile, positionfile)
 
             # 调用实际的处理函数
-            doWorker(pstat, log_handlers, done_queue, logkey, logfile, stopfile, positionfile)
+            doWorker(pstat, pname, log_handlers, done_queue, logkey, logfile, stopfile, positionfile)
 
         except Empty as ee:
             pass
