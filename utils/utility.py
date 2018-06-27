@@ -6,7 +6,7 @@
 #
 # @create: 2015-12-02
 #
-# @update: 2018-06-26 11:43:36
+# @update: 2018-06-27 10:40:43
 #
 #######################################################################
 import os, errno, sys, shutil, inspect, select, commands
@@ -69,25 +69,30 @@ def string_to_datetime(dtstr = None, setdefault = '9999-12-31 23:59:59.999999'):
     return datetime.strptime(dtstr, dtfmt)
 
 
-# get array of paths from path string
+# 分析路径字符串, 得到分组路径: [[group1],[group2],[group3]]
 #  "/tmp/logstash/a.log"
 #  "/tmp/logstash/{a.log,b.log}"
 #  "/tmp/logstash/{a.log,b.log}:/tmp/logstash2/{c.log,d.log}"
+#  "./stashcsv::/tmp/stash::/opt{a,b,c}"
 #
-def parse_pathstr(pathstr):
-    arrpaths = []
-    for pl in pathstr.split(':'):
-        s1, s2 = pl.find("{"), pl.find("}")
-        if s1 > 1 and s2 > s1 + 1:
-            path = pl[0 : s1].strip()
+def parse_path_groups(pathstr):
+    pathgrps = pathstr.split('::')
+    parsed_path_groups = []
+    for grpstr in pathgrps:
+        arrpaths = []
+        for pl in grpstr.split(':'):
+            s1, s2 = pl.find("{"), pl.find("}")
+            if s1 > 1 and s2 > s1 + 1:
+                path = pl[0 : s1].strip()
 
-            for sub in pl[s1 + 1 : s2].split(','):
-                relp = os.path.join(path, sub.strip().rstrip('/'))
+                for sub in pl[s1 + 1 : s2].split(','):
+                    relp = os.path.join(path, sub.strip().rstrip('/'))
+                    arrpaths.append(os.path.realpath(relp))
+            elif s1 < 0 and s2 < 0:
+                relp = pl.strip().rstrip('/')
                 arrpaths.append(os.path.realpath(relp))
-        elif s1 < 0 and s2 < 0:
-            relp = pl.strip().rstrip('/')
-            arrpaths.append(os.path.realpath(relp))
-    return arrpaths
+        parsed_path_groups.append(arrpaths)
+    return parsed_path_groups
 
 
 # get filename by minutes

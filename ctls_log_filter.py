@@ -4,7 +4,7 @@
 #    日志文件过滤处理程序
 #
 # @create: 2018-06-19
-# @update: 2018-06-26 16:46:06
+# @update: 2018-06-27 10:39:59
 #
 #######################################################################
 import os, sys, stat, signal, shutil, inspect, commands, hashlib, time, datetime, yaml
@@ -20,7 +20,7 @@ import optparse, ConfigParser
 APPFILE = os.path.realpath(sys.argv[0])
 APPHOME = os.path.dirname(APPFILE)
 APPNAME,_ = os.path.splitext(os.path.basename(APPFILE))
-APPVER = "2.0.2"
+APPVER = "2.0.4"
 APPHELP = "log files filter and processing"
 
 # import your local modules
@@ -398,7 +398,7 @@ def main(parser, config):
     watch_paths = options.watch_paths
     if watch_paths is None and config.has_key('watch-paths'):
         watch_paths = config['watch-paths']
-    watch_paths = util.parse_pathstr(watch_paths)
+    path_grps = util.parse_path_groups(watch_paths)
 
     # 位置文件保存路径
     #   如果为 None, 则与日志文件目录相同
@@ -463,10 +463,11 @@ def main(parser, config):
             pass
         sys.exit(0)
 
+    #######################################################
     # 启动服务
     elog.force("%s-%s startup", APPNAME, APPVER)
 
-    elog.force("watch paths        : %s", watch_paths)
+    elog.force("watch paths        : %s", path_grps)
     elog.force("position stash     : %r", position_stash_path)
     elog.force("sweep queue size   : %d", config['sweep-queue-size'])
     elog.force("done queue size    : %d", config['done-queue-size'])
@@ -488,14 +489,9 @@ def main(parser, config):
     # 每分钟(60秒)打印一次统计报告
     pstat = ProcessStat(reportInterval = 60)
 
-    # 创建单个 sweep 进程: 创建任务放入任务队列
-    sweep_proc = Process(target = sweeper_worker, args = (pstat, watch_paths, sweep_queue, dictLogfile, stopfile, position_stash_path))
-
-    sweepProcNameList = [ sweep_proc.name ]
-
     # 创建多个 handler 进程: 从任务取出任务队列并执行
     p_handlers = []
-    workerProcNameList = []
+    filtersNames = []
     for i in range(num_handlers):
         p = Process(target = handler_worker, args = (pstat, sweep_queue, done_queue, dictLogfile,
                 log_handlers_config, logger_dictConfig, stopfile))
@@ -503,41 +499,45 @@ def main(parser, config):
         p.start()
         p_handlers.append(p)
 
-        workerProcNameList.append(p.name)
-
-        # wait for 0.1 seconds
-        time.sleep(0.1)
+        filtersNames.append(p.name)
         pass
 
-    # 启动扫描目录单进程
-    sweep_proc.daemon = True
-    sweep_proc.start()
+    # 按分组创建 sweep 进程, 有多少个组就创建多少个 sweep 进程
+    sp_workers = []
+    sweepersNames = []
+    for path_grp in path_grps:
+        sp = Process(target = sweeper_worker, args = (pstat, path_grp, sweep_queue, dictLogfile, stopfile, position_stash_path))
+        sp.daemon = True
+        sp.start()
+        sp_workers.append(sp)
+
+        sweepersNames.append(sp.name)
+        time.sleep(0.1)
+        pass
 
     # 永远运行并间歇打印统计报告
     cnt = 0
     while not util.file_exists(stopfile):
-        cnt += 1
-
         time.sleep(1)
-
+        cnt += 1
         if cnt == pstat.reportInterval:
             cnt = 0
-            pstat.printReport(sweepProcNameList, "SWEEP")
-            pstat.printReport(workerProcNameList, "FILTER")
+            pstat.printReport(sweepersNames, "SWEEPER")
+            pstat.printReport(filtersNames, "FILTER")
         pass
 
-    # block wait child process exit
-    sweep_proc.join()
-
     # block wait child processes exit
+    for sp in sp_workers:
+        sp.join()
+
     for p in p_handlers:
         p.join()
 
     # 全部服务中止
     elog.fatal("%s-%s shutdown.", APPNAME, APPVER)
 
-    pstat.printReport(sweepProcNameList, "SWEEP")
-    pstat.printReport(workerProcNameList, "FILTER")
+    pstat.printReport(sweepersNames, "SWEEPER")
+    pstat.printReport(filtersNames, "FILTER")
 
     pass
 
@@ -599,7 +599,7 @@ if __name__ == "__main__":
     defaultConfig = {
         'sweep-queue-size' : QUEUE_SIZE,
         'done-queue-size' : QUEUE_SIZE,
-        'watch-paths' : './stashcsv',
+        'watch-paths' : './stashcsv::/tmp/stash::/opt{a,b,c}',
         'position-stash' : '/var/log/position-stash',
         'stopfile' : stopfile,
         'logger' : {
